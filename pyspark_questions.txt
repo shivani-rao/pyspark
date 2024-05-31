@@ -1,0 +1,301 @@
+---total of two highest marks that are atleast 160
+FROM pyspark.sql.window import Window
+win = Window.partitionBy(col("student_id").orderBy(co("marksobtained").desc())
+df_win =df.withColumn("rn",row_number().over(win)).filter(col("rn")>=2)
+df_group=df_win.groupBy(col("student_id")).agg(expr("sum (marksobtained) as total"))
+df_res=df_group.filter("total >=160")
+
+---separate the subjects in separate rows for each students
+df1=df.withColumn("sub_list",col('subjects').split(","))\
+      .withColumn("subs",explode(col("sub_list"))
+
+NOTE: subjects here is a string value and explode is applied on list or array so convert it to list 
+
+--- highest and lowest salary in each department
+df1 = df.select("*", row_number().over(Window.partitionBy(col("dep_id")).orderBy(col("salary"))).alias('rn'), count("*").over(Window.partitionBy(col("dep_id"))).alias('count'))
+df1.groupBy("dep_id").agg(max(when(col("rn")==1, col("emp_name"))).alias("max_salary"), max(when(col("rn")==col('count'), col("emp_name"))).alias("min_salary")).display()
+
+
+---get all the dataframes associated to this notebook / spark session 
+NOTE : global symbol table--stores all information related to program's global scope and is accessed in python using globals() method.
+from pyspark.sql import DataFrame
+for k,v in globals().items():
+	if(type(v)==DataFrame):
+		print(k)
+
+---display all dataframes
+from pyspark.sql import DataFrame
+for k,v in globals().items():
+	if(type(v)==DataFrame):   or  if(isinstance(v,DataFrame)):
+		display(v)
+
+----pivot 
+
+df_output=df.groupBy(col("Name")).agg(collect_list(col("Marks")).alias("Marks_New"))
+df_output=df_output.select(col("Name"),col("Marks_New")[0].alias("math"),col("Marks_New")[1].alias("eng"))
+df_output.show()
+				OR
+pivoted_df = df.groupBy("Name").pivot("Subject").agg({"Marks": "first"}).show()
+
+---- read parquet file
+source='/path/to/file'
+destination='/path/to/result'
+df=spark.read.parquet(source)
+df.show()
+df_no_dup=df.dropDuplicates()
+df_no_dup.write.parquet(destination,mode="overwrite")
+spark.stop()
+
+----
+input
+colA	colB	colC
+a	aa	1
+a	aa	2
+b	bb	5
+b	bb	3
+b	bb	4
+
+output
+colA	colB	colC
+a	aa	[1,2]
+b	bb	[5,3,4]
+
+data=[("a","aa",1),
+	("a","aa",2),
+	("b","bb",5),
+	("b","bb",3),
+	("b","bb",4)]
+
+schema=["colA","colB","colC"]
+
+df=spark.createDataFrame(data,schema)
+
+df_grouped=df.groupBy("colA","colB").agg(collest_list("colC")).alias("colC")
+df_grouped.show()
+
+---using spark sql
+df.createOrReplaceTempView("my_table")
+result=spark.sql("""
+			select colA,colB,collect_list(colC) AS colC from my_table group by colA,colB
+			""")
+result.show()
+
+----Read below json file
+input
+{"dep_id":101,"e_id":[10101,10102,10103]}
+{"dep_id":102,"e_id":[10201,10202]}
+
+output
+dep_id	e_id
+101	10101
+101	10102
+101	10103
+102	10201
+102	10202
+
+df=spark.read.json(json_file_path)
+df_exploded=df.selectExpr("dept_id",explode("e_id")).alias("e_id"))
+df_exploded.show()
+
+----
+data=[("2023-01-01","AAPL",150.00),
+("2023-01-02","AAPL",155.00),
+("2023-01-01","GOOG",2050.00),
+("2023-01-02","GOOG",2550.00),
+("2023-01-01","MIST",350.00),
+("2023-01-02","MIST",370.00)
+]
+schema=["date","stock","value"]
+
+df=spark.createDataFrame(data,schema)
+df1=df.withColumn("date",to_date("date"))
+df_avg=df1.groupBy("date","stock").agg(avg("value").alias("avg_value"))
+df_avg.show()
+
+df_max=df_avg.groupBy("stock").agg(max("avg_value").alias("max_value"))
+df_max.show()
+
+----remove special characters from the Customer_Review column
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import regexp_replace, col
+
+# Create a Spark session
+spark = SparkSession.builder \
+ .appName("RemoveSpecialCharacters") \
+ .getOrCreate()
+
+# Sample data
+data = [
+ (1, "Great product! 👍 hashtag#happy"),
+ (2, "Worst experience ever... 😡💢"),
+ (3, "Okay, but could be better! :-/"),
+ (4, "Excellent!!! Would buy again. 💯"),
+ (5, "Meh, it was okay. 😕 hashtag#disappointed")
+]
+
+# Define the schema
+schema = ["Review_ID", "Customer_Review"]
+
+# Create DataFrame
+df = spark.createDataFrame(data, schema)
+
+# Show the original DataFrame
+print("Original DataFrame:")
+df.show
+(truncate=False)
+
+# Remove special characters
+df_cleaned = df.withColumn("Cleaned_Review", regexp_replace(col("Customer_Review"), "[^a-zA-Z0-9\s]", ""))
+
+# Show the cleaned DataFrame
+print("Cleaned DataFrame:")
+df_cleaned.show
+(truncate=False)
+
+# Stop the Spark session
+spark.stop()
+
+----you have a data frame with columns Name, Location, and Skill. Some values are missing (null). Write PySpark or SQL code to replace all null values with the string "Unknown".
+
+df_filled = df.na.fill("Unknown")
+
+---find out best of 3 marks using pyspark and avg of that for best of three
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+from pyspark.sql.window import Window
+
+# Initialize Spark Session
+spark = SparkSession.builder.appName("BestOfThreeMarks").getOrCreate()
+
+# Sample data
+data = [
+    (1, 85), (1, 78), (1, 90), (1, 88), (1, 92),
+    (2, 76), (2, 65), (2, 80), (2, 85), (2, 77),
+    (3, 95), (3, 88), (3, 91), (3, 89), (3, 87)
+]
+
+# Create DataFrame
+columns = ["student_id", "marks"]
+df = spark.createDataFrame(data, columns)
+#define the window clause
+spec=Window.partitionBy("student_id").orderBy(col("marks").desc())
+#assigning ranks to the subjects for each students
+df=df.withColumn("rank",rank().over(spec))
+#filtering out best 3 marks for each student
+filter_df=df.filter(df.rank<=3)
+agg_df=filter_df.groupBy("student_id").agg(avg("marks").cast("int").alias("avg_marks"))
+agg_df.show()
+
+-----
+
+# Convert date strings to a consistent format (YYYY-MM-DD)
+df = df.withColumn('date', to_date(col('date'), 'yyyy-MM-dd'))
+
+# Remove currency symbols and convert amount strings to numeric values
+df = df.withColumn('amount', regexp_replace(col('amount'), '[^\d.]', '').cast('float'))
+
+# Filter data based on conditions
+starts_with_j = df.filter(col("EmployeeName").startswith("J"))
+ends_with_n = df.filter(col("EmployeeName").endswith("n"))
+contains_smi = df.filter(col("EmployeeName").contains("Smi"))
+
+-----Find the top 5 employees from each shop who have done the most amount of sales in the 3rd quarter of 2024
+
+Input Table:
+
++--------+-----------+------+----------+-----------+
+|employee| department|shopid| date|sale_rupees|
++--------+-----------+------+----------+-----------+
+| Rahul|Electronics| 1|2024-07-05| 5000|
+| Priya| Clothing| 1|2024-07-15| 7000|
+| Amit|Electronics| 1|2024-08-10| 3000|
+| Sunita| Clothing| 1|2024-08-20| 10000|
+| Anjali|Electronics| 2|2024-09-01| 2000|
+| Ravi| Clothing| 2|2024-09-10| 8000|
+| Neha|Electronics| 2|2024-07-25| 9000|
+| Vijay| Clothing| 2|2024-08-30| 12000|
+| Raj|Electronics| 3|2024-07-22| 11000|
+| Pooja| Clothing| 3|2024-09-05| 6000|
++--------+-----------+------+----------+-----------+
+
+output:
++--------+------+-----------+
+|employee|shopid|total_sales|
++--------+------+-----------+
+| Sunita| 1| 10000|
+| Priya| 1| 7000|
+| Rahul| 1| 5000|
+| Amit| 1| 3000|
+| Vijay| 2| 12000|
+| Neha| 2| 9000|
+| Ravi| 2| 8000|
+| Anjali| 2| 2000|
+| Raj| 3| 11000|
+| Pooja| 3| 6000|
++--------+------+-----------+
+
+
+# Filter data for the 3rd quarter of 2024
+q3_df = df.filter(
+ (col("date") >= "2024-07-01") & (col("date") <= "2024-09-30")
+)
+
+# Aggregate total sales by employee and shop
+agg_df = q3_df.groupBy("employee", "shopid") \
+ .agg(spark_sum("sale_rupees").alias("total_sales"))
+
+# Define window specification for ranking employees within each shop by total sales
+window_spec = Window.partitionBy("shopid").orderBy(col("total_sales").desc())
+
+# Rank employees and filter top 5 within each shop
+ranked_df = agg_df.withColumn("rank", row_number().over(window_spec)) \
+ .filter(col("rank") <= 5) \
+ .select("employee", "shopid", "total_sales")
+
+# Show the result
+ranked_df.show()
+
+
+WITH cte AS (
+ SELECT employee, shopid, SUM(sale_rupees) AS s
+ FROM sales
+ WHERE MONTH(date) >= 7 AND MONTH(date) <= 9 AND YEAR(date) = "2024"
+ GROUP BY shopid, employee
+),
+cte1 AS (
+ SELECT *, DENSE_RANK() OVER (PARTITION BY shopid ORDER BY s DESC) AS rnk
+ FROM cte
+)
+SELECT employee, shopid,s
+FROM cte1
+WHERE rnk <= 5;
+
+----
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
